@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Điều khiển Game — htrace2</title>
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <div id="topbar"></div>
+  <div class="container">
+    <div id="err" class="alert alert-error hidden"></div>
+    <div class="card text-center">
+      <h2 id="gameName">…</h2>
+      <p class="mb">Trạng thái: <span id="status" class="badge"></span></p>
+      <div class="stack">
+        <button id="btnStart" class="btn btn-success btn-lg btn-block" onclick="act('start')">▶ Bắt đầu game</button>
+        <button id="btnEnd" class="btn btn-danger btn-block" onclick="act('end')">■ Kết thúc game</button>
+        <button id="btnReset" class="btn btn-ghost btn-block" onclick="resetGame()">↺ Reset game</button>
+      </div>
+    </div>
+
+    <div class="card text-center">
+      <h3 class="mb">QR tham gia</h3>
+      <img id="qrImg" alt="QR" style="width:240px;height:240px;background:#fff;border-radius:8px" />
+      <p class="text-sm text-muted mt" id="qrLink"></p>
+      <a id="joinLink" class="btn btn-sm btn-ghost mt" target="_blank">Mở trang join</a>
+    </div>
+
+    <div class="card">
+      <h3 class="mb">Trực trạm</h3>
+      <p class="text-sm text-muted mb">Chọn trạm để mở màn hình điều phối (confirm start, chấm điểm).</p>
+      <div id="stationLinks" class="row wrap"></div>
+    </div>
+  </div>
+
+  <script src="/js/admin-common.js"></script>
+  <script>
+    const id = qs('id');
+    document.getElementById('topbar').innerHTML = renderTopbar('Điều khiển Game', 'control', id);
+    const err = document.getElementById('err');
+
+    function renderStatus(s) {
+      const map = { waiting:['badge-warning','Chờ'], active:['badge-success','Đang chạy'], ended:['badge','Đã kết thúc'] };
+      const [cls,label] = map[s] || ['badge', s];
+      const el = document.getElementById('status');
+      el.className = 'badge ' + cls; el.textContent = label;
+      document.getElementById('btnStart').disabled = (s === 'active');
+      document.getElementById('btnEnd').disabled = (s !== 'active');
+    }
+
+    async function load() {
+      const { game } = await api('/api/games/' + id);
+      document.getElementById('gameName').textContent = game.name;
+      renderStatus(game.status);
+      const qr = await api('/api/games/' + id + '/qr');
+      document.getElementById('qrImg').src = qr.qr;
+      document.getElementById('qrLink').textContent = qr.url;
+      document.getElementById('joinLink').href = qr.url;
+
+      const { stations } = await api('/api/stations?game_id=' + id);
+      document.getElementById('stationLinks').innerHTML = stations.length
+        ? stations.map(s => `<a class="btn btn-sm btn-ghost" href="/admin/station-view.html?station_id=${s.id}">${esc(s.name)}${s.is_private?' 🔒':''}</a>`).join('')
+        : '<span class="text-muted text-sm">Chưa có trạm.</span>';
+    }
+
+    async function act(kind) {
+      try { await api(`/api/games/${id}/${kind}`, { method: 'POST' }); load(); }
+      catch (e) { err.textContent = e.message; err.classList.remove('hidden'); }
+    }
+    async function resetGame() {
+      if (!confirm('Reset game? Toàn bộ tiến độ & điểm sẽ bị xoá, các đội về trạng thái chờ.')) return;
+      act('reset');
+    }
+
+    (async () => { if (await requireAdmin()) load(); })();
+  </script>
+</body>
+</html>

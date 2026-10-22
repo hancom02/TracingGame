@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Dashboard — htrace2</title>
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <div id="topbar"></div>
+  <div class="container container-wide">
+    <div class="row-between mb">
+      <h2>Danh sách Game</h2>
+      <a class="btn" href="/admin/game-setup.html">+ Tạo game mới</a>
+    </div>
+    <div id="err" class="alert alert-error hidden"></div>
+    <div id="list" class="stack"></div>
+  </div>
+
+  <!-- Modal QR -->
+  <div id="qrModal" class="center-screen hidden" style="position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:50">
+    <div class="card text-center" style="max-width:360px">
+      <h3 id="qrTitle" class="mb">QR tham gia</h3>
+      <img id="qrImg" alt="QR" style="width:260px;height:260px;background:#fff;border-radius:8px" />
+      <p class="text-sm text-muted mt" id="qrLink"></p>
+      <button class="btn btn-ghost btn-block mt" onclick="closeQR()">Đóng</button>
+    </div>
+  </div>
+
+  <script src="/js/admin-common.js"></script>
+  <script>
+    const list = document.getElementById('list');
+    const err = document.getElementById('err');
+    document.getElementById('topbar').innerHTML = renderTopbar('Dashboard');
+
+    function statusBadge(s) {
+      const map = { waiting: ['badge-warning','Chờ'], active: ['badge-success','Đang chạy'], ended: ['badge','Đã kết thúc'] };
+      const [cls, label] = map[s] || ['badge', s];
+      return `<span class="badge ${cls}">${label}</span>`;
+    }
+
+    function gameCard(g) {
+      return `<div class="card">
+        <div class="row-between">
+          <div>
+            <h3>${esc(g.name)} ${statusBadge(g.status)}</h3>
+            <p class="text-sm text-muted">${g.total_slots} đội · ID #${g.id}</p>
+          </div>
+        </div>
+        <div class="row wrap mt">
+          <a class="btn btn-sm" href="/admin/game-setup.html?id=${g.id}">Sửa game</a>
+          <a class="btn btn-sm btn-ghost" href="/admin/station-setup.html?game_id=${g.id}">Trạm</a>
+          <a class="btn btn-sm btn-ghost" href="/admin/questions.html?game_id=${g.id}">Câu hỏi</a>
+          <a class="btn btn-sm btn-ghost" href="/admin/game-control.html?id=${g.id}">Điều khiển</a>
+          <a class="btn btn-sm btn-ghost" href="/admin/monitor-station.html?game_id=${g.id}">Monitor trạm</a>
+          <a class="btn btn-sm btn-ghost" href="/admin/monitor-team.html?game_id=${g.id}">Monitor đội</a>
+          <button class="btn btn-sm btn-ghost" onclick="showQR(${g.id}, '${esc(g.name)}')">QR</button>
+          <button class="btn btn-sm btn-danger" onclick="delGame(${g.id})">Xóa</button>
+        </div>
+      </div>`;
+    }
+
+    async function load() {
+      try {
+        const { games } = await api('/api/games');
+        list.innerHTML = games.length
+          ? games.map(gameCard).join('')
+          : '<div class="card text-center text-muted">Chưa có game nào. Nhấn "Tạo game mới".</div>';
+      } catch (e) {
+        err.textContent = e.message; err.classList.remove('hidden');
+      }
+    }
+
+    async function delGame(id) {
+      if (!confirm('Xóa game này và toàn bộ trạm/câu hỏi/đội?')) return;
+      try { await api('/api/games/' + id, { method: 'DELETE' }); load(); }
+      catch (e) { alert(e.message); }
+    }
+
+    async function showQR(id, name) {
+      try {
+        const data = await api('/api/games/' + id + '/qr');
+        document.getElementById('qrTitle').textContent = 'QR tham gia — ' + name;
+        document.getElementById('qrImg').src = data.qr;
+        document.getElementById('qrLink').textContent = data.url;
+        document.getElementById('qrModal').classList.remove('hidden');
+      } catch (e) { alert(e.message); }
+    }
+    function closeQR() { document.getElementById('qrModal').classList.add('hidden'); }
+
+    (async () => { if (await requireAdmin()) load(); })();
+  </script>
+</body>
+</html>

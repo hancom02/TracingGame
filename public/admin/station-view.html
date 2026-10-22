@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Trực trạm — htrace2</title>
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <div id="topbar"></div>
+  <div class="container container-wide">
+    <h2 id="stName" class="mb">…</h2>
+    <div id="err" class="alert alert-error hidden"></div>
+
+    <!-- Yêu cầu bắt đầu -->
+    <div class="card" id="requestsCard">
+      <h3 class="mb">Đội chờ xác nhận bắt đầu</h3>
+      <div id="requests" class="stack"><p class="text-muted text-sm">Chưa có đội nào yêu cầu.</p></div>
+    </div>
+
+    <!-- Đội tại trạm -->
+    <div class="card">
+      <h3 class="mb">Đội tại trạm này</h3>
+      <div id="teamsAtStation"></div>
+    </div>
+
+    <!-- Nhập/override điểm (private hoặc public) -->
+    <div class="card" id="scoreCard">
+      <h3 id="scoreTitle" class="mb">Nhập / Override điểm</h3>
+      <div class="grid grid-2">
+        <div class="field"><label>Chọn đội</label><select id="teamSel"></select></div>
+        <div class="field"><label>Điểm <span class="text-muted">(có thể âm với trạm private)</span></label><input id="scoreVal" type="number" /></div>
+      </div>
+      <button class="btn" id="scoreSubmit">Lưu điểm</button>
+    </div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/js/admin-common.js"></script>
+  <script>
+    document.getElementById('topbar').innerHTML = renderTopbar('Trực trạm');
+    const stationId = qs('station_id');
+    const err = document.getElementById('err');
+    let station, socket, teams = [];
+    const pendingRequests = new Map(); // team_id -> team_name
+
+    function renderRequests() {
+      const box = document.getElementById('requests');
+      if (pendingRequests.size === 0) { box.innerHTML = '<p class="text-muted text-sm">Chưa có đội nào yêu cầu.</p>'; return; }
+      box.innerHTML = [...pendingRequests.entries()].map(([tid, name]) =>
+        `<div class="row-between mono-cell">
+          <span>🏃 ${esc(name)}</span>
+          <button class="btn btn-sm btn-success" onclick="confirmStart(${tid})">Xác nhận bắt đầu</button>
+        </div>`).join('');
+    }
+
+    function confirmStart(teamId) {
+      socket.emit('admin:confirm_start', { team_id: teamId, station_id: Number(stationId) });
+      pendingRequests.delete(teamId); renderRequests();
+    }
+
+    let _gameId = null;
+    async function loadStation() {
+      const data = await api('/api/stations/' + stationId);
+      station = data.station;
+      _gameId = station.game_id;
+      document.getElementById('stName').textContent = station.name + (station.is_private ? ' 🔒 (private)' : '');
+      document.getElementById('scoreTitle').textContent = station.is_private
+        ? 'Cộng / trừ điểm (trạm private)' : 'Nhập / Override điểm';
+    }
+
+    async function gameIdOfStation() {
+      if (_gameId) return _gameId;
+      await loadStation();
+      return _gameId;
+    }
+
+    async function loadTeams() {
+      const gid = await gameIdOfStation();
+      const { stations } = await api('/api/games/' + gid + '/monitor/stations');
+      const entry = stations.find(s => String(s.station.id) === String(stationId));
+      const rows = entry ? entry.teams : [];
+      // đội tại trạm
+      document.getElementById('teamsAtStation').innerHTML = rows.length ? `
+        <table><thead><tr><th>Đội</th><th>Trạng thái</th><th>Điểm</th><th>Nguồn</th></tr></thead>
+        <tbody>${rows.map(r => `<tr>
+          <td>${esc(r.team_name)}</td>
+          <td>${statusLabel(r.status)}</td>
+          <td>${r.score ?? 0}</td>
+          <td>${r.score_updated_by === 'admin' ? 'Admin' : (r.score_updated_by === 'team' ? 'Player' : '—')}</td>
+        </tr>`).join('')}</tbody></table>` : '<p class="text-muted text-sm">Chưa có đội nào tại trạm.</p>';
+
+      // dropdown đội: private → tất cả đội trong game; public → đội tại trạm
+      const allTeams = (await api('/api/games/' + gid + '/monitor/teams')).teams;
+      const options = (station && station.is_private)
+        ? allTeams.map(t => t.team)
+        : rows.map(r => ({ id: r.team_id, name: r.team_name }));
+      document.getElementById('teamSel').innerHTML = options.length
+        ? options.map(t => `<option value="${t.id}">${esc(t.name)}</option>`).join('')
+        : '<option value="">(chưa có đội)</option>';
+    }
+
+    function statusLabel(s) {
+      return { pending: '<span class="badge badge-warning">Chờ</span>', active: '<span class="badge badge-primary">Đang chơi</span>', timeup: '<span class="badge badge-danger">Hết giờ</span>', completed: '<span class="badge badge-success">Xong</span>' }[s] || s;
+    }
+
+    document.getElementById('scoreSubmit').addEventListener('click', () => {
+      const teamId = document.getElementById('teamSel').value;
+      const val = parseInt(document.getElementById('scoreVal').value, 10);
+      if (!teamId || isNaN(val)) { alert('Chọn đội và nhập điểm hợp lệ'); return; }
+      socket.emit('admin:override_score', { team_id: Number(teamId), station_id: Number(stationId), score: val });
+      document.getElementById('scoreVal').value = '';
+      setTimeout(loadTeams, 300);
+    });
+
+    function setupSocket() {
+      socket = io();
+      socket.on('connect', () => socket.emit('admin:join_station', { station_id: Number(stationId) }));
+      socket.on('admin:start_requested', ({ team_id, team_name }) => { pendingRequests.set(team_id, team_name); renderRequests(); });
+      socket.on('admin:pending_requests_snapshot', ({ requests }) => {
+        pendingRequests.clear();
+        requests.forEach(r => pendingRequests.set(r.team_id, r.team_name));
+        renderRequests();
+      });
+      socket.on('admin:request_expired', ({ team_id }) => { pendingRequests.delete(team_id); renderRequests(); });
+      socket.on('admin:team_started', () => loadTeams());
+      socket.on('admin:score_submitted', () => loadTeams());
+      socket.on('admin:answer_submitted', ({ team_name, answer, correct }) => {
+        err.className = 'alert alert-info'; err.classList.remove('hidden');
+        err.textContent = `${team_name} trả lời: ${String(answer).toUpperCase()} ${correct===true?'(đúng)':correct===false?'(sai)':''}`;
+      });
+      socket.on('monitor:refresh', () => loadTeams());
+    }
+
+    (async () => {
+      if (!(await requireAdmin())) return;
+      if (!stationId) { err.textContent = 'Thiếu station_id'; err.classList.remove('hidden'); return; }
+      try { await loadStation(); setupSocket(); await loadTeams(); }
+      catch (e) { err.textContent = e.message; err.classList.remove('hidden'); }
+    })();
+  </script>
+</body>
+</html>

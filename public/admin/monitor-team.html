@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Monitor theo Đội — htrace2</title>
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <div id="topbar"></div>
+  <div class="container container-wide">
+    <div class="row-between mb">
+      <h2>Monitor theo Đội</h2>
+      <a class="btn btn-sm btn-ghost" id="stationLink">Xem theo Trạm →</a>
+    </div>
+    <div id="err" class="alert alert-error hidden"></div>
+    <div id="list" class="stack"></div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/js/admin-common.js"></script>
+  <script>
+    const gameId = qs('game_id');
+    document.getElementById('topbar').innerHTML = renderTopbar('Monitor Đội', 'monitor-team', gameId);
+    const err = document.getElementById('err');
+    document.getElementById('stationLink').href = '/admin/monitor-station.html?game_id=' + gameId;
+
+    function fmt(dt) { return dt ? dt.split(' ')[1] || dt : '—'; }
+    function statusBadge(s) {
+      return { pending:'<span class="badge badge-warning">Chờ</span>', active:'<span class="badge badge-primary">Đang chơi</span>', timeup:'<span class="badge badge-danger">Hết giờ</span>', completed:'<span class="badge badge-success">Xong</span>' }[s] || s;
+    }
+
+    async function load() {
+      try {
+        const { teams } = await api('/api/games/' + gameId + '/monitor/teams');
+        // sắp xếp theo tổng điểm giảm dần
+        teams.sort((a,b) => b.total_score - a.total_score);
+        document.getElementById('list').innerHTML = teams.map(t => {
+          const timeline = t.history.length ? `
+            <table class="mt"><thead><tr><th>#</th><th>Trạm</th><th>Bắt đầu</th><th>Kết thúc</th><th>Điểm</th></tr></thead>
+            <tbody>${t.history.map(h => `<tr>
+              <td>${h.visit_order ?? '—'}</td>
+              <td>${esc(h.station_name)} ${h.is_private ? '🔒' : ''} ${statusBadge(h.status)}</td>
+              <td>${fmt(h.started_at)}</td>
+              <td>${fmt(h.completed_at)}</td>
+              <td><strong>${h.score ?? 0}</strong></td>
+            </tr>`).join('')}</tbody></table>` : '<p class="text-muted text-sm mt">Chưa đi trạm nào.</p>';
+          return `<div class="card">
+            <div class="row-between">
+              <h3>${esc(t.team.name)} <span class="text-muted text-sm">(ô ${t.team.slot_number})</span></h3>
+              <div class="text-right">
+                <div><strong class="text-lg">${t.total_score}</strong> điểm</div>
+                <div class="text-sm text-muted">${t.done_public}/${t.total_public} trạm · ${t.current_station ? 'đang ở: '+esc(t.current_station) : t.team.status}</div>
+              </div>
+            </div>
+            ${timeline}
+          </div>`;
+        }).join('') || '<div class="card text-muted">Chưa có đội nào tham gia.</div>';
+      } catch (e) { err.textContent = e.message; err.classList.remove('hidden'); }
+    }
+
+    (async () => {
+      if (!(await requireAdmin())) return;
+      await load();
+      const socket = io();
+      socket.on('connect', () => socket.emit('admin:join_game', { game_id: Number(gameId) }));
+      socket.on('monitor:refresh', load);
+      socket.on('game:ended', load);
+      socket.on('game:reset', load);
+    })();
+  </script>
+</body>
+</html>

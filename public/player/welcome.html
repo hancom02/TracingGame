@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Chào mừng — htrace2</title>
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <div class="center-screen">
+    <div class="container text-center">
+      <div class="card">
+        <h1 class="mb">🎉 Chào mừng!</h1>
+        <p class="text-lg">Đội <strong id="teamName">…</strong></p>
+        <p class="text-muted mb">Ô số <span id="slot"></span></p>
+        <div id="waiting" class="alert alert-info hidden">Đang chờ admin bắt đầu game…</div>
+        <button id="startBtn" class="btn btn-lg btn-block hidden" onclick="location.href='/player/question.html'">
+          Bắt đầu — Trả lời câu hỏi mở khoá
+        </button>
+        <button class="btn btn-ghost btn-sm mt" onclick="leave()">Rời đội</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/js/player-common.js"></script>
+  <script>
+    function leave() {
+      if (confirm('Rời đội và xoá phiên trên thiết bị này?')) { clearSession(); location.href = '/'; }
+    }
+
+    (async () => {
+      const me = await routePlayer();
+      if (!me) { location.href = '/'; return; }
+      document.getElementById('teamName').textContent = me.team.name;
+      document.getElementById('slot').textContent = me.team.slot_number;
+
+      // Điều hướng theo trạng thái
+      if (me.game_status === 'ended' || me.team.status === 'finished') {
+        location.href = '/player/result.html'; return;
+      }
+      if (me.team.current_station_id) {
+        location.href = '/player/game.html'; return;
+      }
+      if (me.game_status === 'active') {
+        document.getElementById('startBtn').classList.remove('hidden');
+      } else {
+        document.getElementById('waiting').classList.remove('hidden');
+        // Poll cho tới khi game active
+        setInterval(async () => {
+          const m = await routePlayer();
+          if (m && m.game_status === 'active') location.reload();
+          if (m && m.game_status === 'ended') location.href = '/player/result.html';
+        }, 4000);
+      }
+    })();
+  </script>
+</body>
+</html>

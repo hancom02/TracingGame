@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Tham gia — htrace2</title>
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <div class="container">
+    <div class="text-center mt mb">
+      <h1>🏁 <span id="gameName">…</span></h1>
+      <p class="text-muted">Đặt tên đội của bạn</p>
+    </div>
+    <div id="err" class="alert alert-error hidden"></div>
+    <div id="msg" class="alert alert-info hidden"></div>
+
+    <div id="joinBox" class="card">
+      <div class="field">
+        <label for="teamName">Tên đội</label>
+        <input id="teamName" maxlength="40" placeholder="VD: Đội Sấm Sét" />
+      </div>
+      <button id="joinBtn" class="btn btn-block btn-lg">Tham gia</button>
+    </div>
+  </div>
+
+  <script src="/js/player-common.js"></script>
+  <script>
+    const gameId = qs('game_id') || getGameId();
+    const err = document.getElementById('err');
+    const msg = document.getElementById('msg');
+    let full = false;
+
+    function showErr(m) { err.textContent = m; err.classList.remove('hidden'); }
+
+    async function load() {
+      try {
+        const data = await papi('/api/games/' + gameId + '/slots');
+        document.getElementById('gameName').textContent = data.game_name;
+        const takenCount = Object.keys(data.taken).length;
+        full = takenCount >= data.total_slots;
+        if (full) {
+          msg.textContent = 'Tất cả đội đã tham gia đủ.'; msg.classList.remove('hidden');
+          document.getElementById('joinBox').classList.add('hidden');
+        }
+      } catch (e) { showErr(e.message); }
+    }
+
+    document.getElementById('joinBtn').addEventListener('click', async () => {
+      err.classList.add('hidden');
+      const name = document.getElementById('teamName').value.trim();
+      if (full) return showErr('Tất cả đội đã tham gia đủ');
+      if (!name) return showErr('Vui lòng nhập tên đội');
+      try {
+        const data = await papi('/api/teams/join', {
+          method: 'POST',
+          body: JSON.stringify({ game_id: gameId, name }),
+        });
+        setSession(data.session_token, gameId);
+        location.href = '/player/welcome.html';
+      } catch (e) { showErr(e.message); load(); }
+    });
+
+    (async () => {
+      if (!gameId) return showErr('Thiếu game_id — hãy quét QR của game.');
+      // Nếu đã có session hợp lệ → vào thẳng game
+      const me = await routePlayer();
+      if (me && String(me.team.game_id) === String(gameId)) {
+        location.href = '/player/welcome.html';
+        return;
+      }
+      load();
+    })();
+  </script>
+</body>
+</html>

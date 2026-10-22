@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Thiết lập Game — htrace2</title>
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <div id="topbar"></div>
+  <div class="container">
+    <h2 id="title" class="mb">Tạo game mới</h2>
+    <div id="err" class="alert alert-error hidden"></div>
+    <div class="card">
+      <form id="form">
+        <div class="field">
+          <label for="name">Tên game *</label>
+          <input id="name" required />
+        </div>
+        <div class="field">
+          <label for="banner_url">Banner URL (tuỳ chọn)</label>
+          <input id="banner_url" placeholder="https://..." />
+        </div>
+        <div class="field">
+          <label for="total_slots">Số đội tham gia</label>
+          <input id="total_slots" type="number" min="1" value="10" />
+        </div>
+        <button class="btn btn-block" type="submit">Lưu</button>
+      </form>
+    </div>
+  </div>
+
+  <script src="/js/admin-common.js"></script>
+  <script>
+    document.getElementById('topbar').innerHTML = renderTopbar('Thiết lập Game', 'setup', qs('id'));
+    const err = document.getElementById('err');
+    const form = document.getElementById('form');
+    const id = qs('id');
+
+    async function init() {
+      if (id) {
+        document.getElementById('title').textContent = 'Sửa game';
+        const { game } = await api('/api/games/' + id);
+        form.name.value = game.name;
+        form.banner_url.value = game.banner_url || '';
+        form.total_slots.value = game.total_slots;
+      }
+    }
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      err.classList.add('hidden');
+      const body = {
+        name: form.name.value.trim(),
+        banner_url: form.banner_url.value.trim(),
+        total_slots: form.total_slots.value,
+      };
+      try {
+        if (id) await api('/api/games/' + id, { method: 'PUT', body: JSON.stringify(body) });
+        else await api('/api/games', { method: 'POST', body: JSON.stringify(body) });
+        location.href = '/admin/dashboard.html';
+      } catch (e2) { err.textContent = e2.message; err.classList.remove('hidden'); }
+    });
+
+    (async () => { if (await requireAdmin()) init(); })();
+  </script>
+</body>
+</html>

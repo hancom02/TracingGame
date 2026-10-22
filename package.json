@@ -1,0 +1,26 @@
+{
+  "name": "htrace2",
+  "version": "1.0.0",
+  "description": "Web platform cho trò chơi chạy trạm ngoài trời (station-based outdoor game)",
+  "main": "server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server.js",
+    "seed": "node db/seed.js",
+    "dev": "node --watch server.js",
+    "test": "node scripts/test-flow.js",
+    "test:pick": "node scripts/test-pick.js",
+    "test:request-flow": "node scripts/test-request-flow.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "express": "^4.21.0",
+    "express-session": "^1.18.0",
+    "qrcode": "^1.5.4",
+    "socket.io": "^4.8.0",
+    "uuid": "^10.0.0"
+  },
+  "devDependencies": {
+    "socket.io-client": "^4.8.3"
+  }
+}

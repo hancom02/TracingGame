@@ -1,0 +1,487 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HTrace — Userflow toàn hệ thống</title>
+<style>
+  :root {
+    --paper: #f6f4ee;
+    --paper-line: #d9d3c4;
+    --paper-ink: #2b2724;
+    --admin: #0f5c52;
+    --admin-soft: #e8f1ef;
+    --player: #d95a24;
+    --player-soft: #fbe9de;
+    --wait: #64748b;
+    --live: #15803d;
+    --ended: #57534e;
+    --score: #7c3aed;
+
+    --bg: #eeece6;
+    --surface: #ffffff;
+    --border: #ddd8cf;
+    --ink: #23211e;
+    --muted: #6d6a63;
+    --card-shadow: 0 1px 2px rgba(30,28,24,.06), 0 8px 24px rgba(30,28,24,.05);
+    --font-display: "Space Grotesk", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --font-body: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #16191c;
+      --surface: #1e2226;
+      --border: #313840;
+      --ink: #e9e6df;
+      --muted: #9aa0a6;
+      --admin-soft: #14312c;
+      --player-soft: #3a2016;
+      --card-shadow: 0 1px 2px rgba(0,0,0,.4), 0 10px 30px rgba(0,0,0,.35);
+    }
+  }
+  :root[data-theme="light"] {
+    --bg: #eeece6; --surface: #ffffff; --border: #ddd8cf; --ink: #23211e; --muted: #6d6a63;
+    --admin-soft: #e8f1ef; --player-soft: #fbe9de;
+    --card-shadow: 0 1px 2px rgba(30,28,24,.06), 0 8px 24px rgba(30,28,24,.05);
+  }
+  :root[data-theme="dark"] {
+    --bg: #16191c; --surface: #1e2226; --border: #313840; --ink: #e9e6df; --muted: #9aa0a6;
+    --admin-soft: #14312c; --player-soft: #3a2016;
+    --card-shadow: 0 1px 2px rgba(0,0,0,.4), 0 10px 30px rgba(0,0,0,.35);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--font-body);
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 56px 24px 96px; }
+
+  header.masthead { margin-bottom: 40px; }
+  .eyebrow {
+    font-family: var(--font-mono);
+    font-size: 12px; letter-spacing: .18em; text-transform: uppercase;
+    color: var(--player); font-weight: 600; margin: 0 0 12px;
+  }
+  h1 {
+    font-family: var(--font-display);
+    font-size: clamp(30px, 5vw, 46px);
+    line-height: 1.05; letter-spacing: -.02em; font-weight: 700;
+    margin: 0 0 14px; text-wrap: balance;
+  }
+  .lede { font-size: 18px; color: var(--muted); max-width: 64ch; margin: 0; }
+
+  .tech {
+    display: flex; flex-wrap: wrap; gap: 8px; margin-top: 22px;
+  }
+  .tech span {
+    font-family: var(--font-mono); font-size: 12px;
+    padding: 4px 10px; border: 1px solid var(--border); border-radius: 999px;
+    color: var(--muted); background: var(--surface);
+  }
+
+  section { margin-top: 56px; }
+  .sec-head { display: flex; align-items: baseline; gap: 14px; margin-bottom: 6px; }
+  .sec-num {
+    font-family: var(--font-mono); font-size: 13px; font-weight: 600;
+    color: var(--admin); letter-spacing: .05em;
+  }
+  h2 {
+    font-family: var(--font-display); font-weight: 700;
+    font-size: clamp(21px, 3vw, 27px); letter-spacing: -.01em; margin: 0;
+  }
+  .sec-sub { color: var(--muted); margin: 4px 0 22px; max-width: 68ch; }
+
+  .panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    box-shadow: var(--card-shadow);
+    overflow: hidden;
+  }
+  .panel-cap {
+    display: flex; align-items: center; gap: 10px;
+    padding: 12px 18px; border-bottom: 1px solid var(--border);
+    font-family: var(--font-mono); font-size: 12.5px; letter-spacing: .04em;
+    color: var(--muted); text-transform: uppercase;
+  }
+  .dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+  .diagram {
+    background: var(--paper);
+    padding: 26px 22px;
+    overflow-x: auto;
+  }
+  .diagram .mermaid { display: flex; justify-content: center; min-width: min-content; }
+  .diagram .mermaid svg { max-width: 100%; height: auto; }
+  .flow-connector {
+    text-align: center; font-size: 13.5px; color: var(--muted);
+    padding: 10px 18px; background: var(--paper); border-top: 1px dashed var(--border); border-bottom: 1px dashed var(--border);
+  }
+
+  /* legend */
+  .legend {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+    gap: 12px; margin-top: 8px;
+  }
+  .legend .item {
+    display: flex; align-items: center; gap: 10px;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 10px; padding: 11px 14px; font-size: 14px;
+  }
+  .swatch { width: 16px; height: 16px; border-radius: 5px; flex: none; border: 1px solid rgba(0,0,0,.12); }
+  .legend b { font-weight: 600; }
+  .legend small { display: block; color: var(--muted); font-size: 12px; }
+
+  /* callout */
+  .callout {
+    background: var(--admin-soft);
+    border: 1px solid var(--admin);
+    border-left-width: 4px;
+    border-radius: 12px;
+    padding: 20px 22px;
+  }
+  .callout h3 {
+    margin: 0 0 12px; font-family: var(--font-display);
+    font-size: 17px; letter-spacing: -.01em;
+    color: var(--admin);
+  }
+  :root[data-theme="dark"] .callout h3, @media (prefers-color-scheme: dark) { }
+  .callout ul { margin: 0; padding-left: 0; list-style: none; display: grid; gap: 14px; }
+  .callout li { display: grid; grid-template-columns: auto 1fr; gap: 12px; align-items: start; }
+  .tag {
+    font-family: var(--font-mono); font-size: 11px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: .05em;
+    padding: 3px 9px; border-radius: 6px; white-space: nowrap; margin-top: 2px;
+    color: #fff;
+  }
+  .tag.move { background: var(--admin); }
+  .tag.trim { background: var(--player); }
+  .tag.hide { background: var(--wait); }
+  .callout code {
+    font-family: var(--font-mono); font-size: 12.5px;
+    background: var(--surface); padding: 1px 6px; border-radius: 5px;
+    border: 1px solid var(--border);
+  }
+
+  .note {
+    margin-top: 18px; font-size: 13.5px; color: var(--muted);
+    border-top: 1px dashed var(--border); padding-top: 16px;
+  }
+  .note b { color: var(--ink); }
+  footer {
+    margin-top: 64px; padding-top: 22px; border-top: 1px solid var(--border);
+    color: var(--muted); font-size: 13px;
+  }
+  a { color: var(--admin); }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header class="masthead">
+    <p class="eyebrow">Userflow · Toàn hệ thống</p>
+    <h1>HTrace — Cuộc đua trạm theo đội, thời gian thực</h1>
+    <p class="lede">Sơ đồ luồng đầy đủ cho ban tổ chức (Admin) và người chơi (Đội), phản ánh việc tổ chức lại control: gộp thao tác trạm về tab <b>Monitor trạm</b> và rút gọn tab <b>Điều khiển</b>.</p>
+    <div class="tech">
+      <span>Node · Express</span>
+      <span>Socket.io</span>
+      <span>SQLite</span>
+      <span>Static HTML admin + player</span>
+    </div>
+  </header>
+
+  <!-- CALLOUT: reorg -->
+  <section style="margin-top:36px;">
+    <div class="callout">
+      <h3>Thay đổi tổ chức control trong lần cập nhật này</h3>
+      <ul>
+        <li>
+          <span class="tag move">Gộp</span>
+          <div><b>Tab Monitor trạm</b> nhận thêm thao tác điều phối trạm: <b>cho điểm đội tại trạm tùy chọn</b> (trạm riêng / override điểm) — trước đây nằm ở màn <code>station-view.html</code>.</div>
+        </li>
+        <li>
+          <span class="tag hide">Tạm ẩn</span>
+          <div><b>Bắt đầu thử thách</b> (<code>admin:confirm_start</code>) tạm thời ẩn khỏi giao diện. Do vẫn cần khởi động lượt chơi, luồng giả định server <b>tự xác nhận</b> khi đội bấm bắt đầu (xem ghi chú §4).</div>
+        </li>
+        <li>
+          <span class="tag trim">Rút gọn</span>
+          <div><b>Tab Điều khiển</b> chỉ còn: <b>Bắt đầu / Kết thúc / Reset game</b> và <b>QR tham gia</b>. Danh sách link trực trạm được gỡ bỏ.</div>
+        </li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- LEGEND -->
+  <section>
+    <div class="sec-head"><span class="sec-num">Chú giải</span><h2>Màu theo vai trò &amp; trạng thái</h2></div>
+    <div class="legend">
+      <div class="item"><span class="swatch" style="background:var(--admin)"></span><b>Admin / BTC</b></div>
+      <div class="item"><span class="swatch" style="background:var(--player)"></span><b>Người chơi / Đội</b></div>
+      <div class="item"><span class="swatch" style="background:var(--wait)"></span><b>Chờ</b><small>waiting · pending</small></div>
+      <div class="item"><span class="swatch" style="background:var(--live)"></span><b>Đang chạy</b><small>active · timer</small></div>
+      <div class="item"><span class="swatch" style="background:var(--score)"></span><b>Chấm điểm</b><small>score · override</small></div>
+      <div class="item"><span class="swatch" style="background:var(--ended)"></span><b>Kết thúc</b><small>completed · ended</small></div>
+    </div>
+  </section>
+
+  <!-- 1. OVERVIEW -->
+  <section>
+    <div class="sec-head"><span class="sec-num">01</span><h2>Bản đồ tổng thể</h2></div>
+    <p class="sec-sub">Ba tác nhân quanh một server thời gian thực. Admin thiết lập &amp; điều phối; đội tham gia &amp; chơi; server đồng bộ timer, điểm và trạng thái qua Socket.io.</p>
+    <div class="panel">
+      <div class="panel-cap"><span class="dot" style="background:var(--admin)"></span>Toàn cảnh</div>
+      <div class="diagram"><pre class="mermaid">
+%%{init: {'theme':'base','themeVariables':{'primaryColor':'#ffffff','primaryBorderColor':'#c9c2b4','primaryTextColor':'#2b2724','lineColor':'#9b917f','fontSize':'17px'}}}%%
+flowchart TB
+  classDef admin fill:#e8f1ef,stroke:#0f5c52,color:#0f3a34,stroke-width:1.5px;
+  classDef player fill:#fbe9de,stroke:#d95a24,color:#7a3410,stroke-width:1.5px;
+  classDef sys fill:#eef1f4,stroke:#64748b,color:#334155,stroke-width:1.5px;
+
+  Admin["👤 Admin / BTC<br/>login → dashboard"]:::admin
+  Player["🧭 Người chơi / Đội<br/>quét QR → join"]:::player
+  Server["⚙️ Server<br/>Express · Socket.io · SQLite"]:::sys
+
+  Admin -->|"Thiết lập · Điều khiển · Monitor + cho điểm"| Server
+  Player -->|"Tham gia · Chơi trạm · Nộp điểm"| Server
+  Server -.->|"Realtime → timer, điểm, chuyển trạm"| Player
+  Server -.->|"Realtime → monitor:refresh"| Admin
+</pre></div>
+    </div>
+  </section>
+
+  <!-- 2. ADMIN -->
+  <section>
+    <div class="sec-head"><span class="sec-num">02</span><h2>Luồng Admin — thiết lập, điều khiển, giám sát</h2></div>
+    <p class="sec-sub">Từ dashboard, mỗi game có các tab điều hướng: Sửa game · Trạm · Câu hỏi · Điều khiển · Monitor trạm · Monitor đội. Mỗi flow nhỏ dưới đây tách thành một sơ đồ riêng.</p>
+
+    <div class="panel">
+      <div class="panel-cap"><span class="dot" style="background:var(--admin)"></span>2.1 — Đăng nhập &amp; Dashboard</div>
+      <div class="diagram"><pre class="mermaid">
+%%{init: {'theme':'base','themeVariables':{'primaryColor':'#ffffff','primaryBorderColor':'#c9c2b4','primaryTextColor':'#2b2724','lineColor':'#9b917f','fontSize':'17px'}}}%%
+flowchart TB
+  classDef admin fill:#e8f1ef,stroke:#0f5c52,color:#0f3a34;
+  classDef hide fill:#eef1f4,stroke:#94a3b8,color:#64748b,stroke-dasharray:5 4;
+
+  L0["Màn Đăng nhập<br/>nhập tài khoản · mật khẩu"]:::admin --> L1["Kiểm tra tài khoản · mật khẩu"]:::admin
+  L1 -->|"sai"| L0
+  L1 -->|"đúng"| L2["Ghi nhớ đăng nhập<br/>(phiên 12 giờ)"]:::admin
+  L2 --> L3["Màn Dashboard<br/>danh sách game + trạng thái"]:::admin
+  L3 -->|"mở bất kỳ trang admin nào khác"| L4["Kiểm tra phiên đăng nhập<br/>chặn nếu chưa đăng nhập"]:::hide
+</pre></div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-cap"><span class="dot" style="background:var(--player)"></span>2.2 — Tạo / Sửa / Xóa Game</div>
+      <div class="diagram"><pre class="mermaid">
+%%{init: {'theme':'base','themeVariables':{'primaryColor':'#ffffff','primaryBorderColor':'#c9c2b4','primaryTextColor':'#2b2724','lineColor':'#9b917f','fontSize':'17px'}}}%%
+flowchart TB
+  classDef trim fill:#fbe9de,stroke:#d95a24,color:#7a3410;
+  classDef hide fill:#eef1f4,stroke:#94a3b8,color:#64748b,stroke-dasharray:5 4;
+
+  D0["Màn Dashboard<br/>danh sách game"]:::trim -->|"chọn Tạo game mới"| G1["Màn Thiết lập Game<br/>(tạo mới)"]:::trim
+  G1 --> G2["Nhập tên · banner URL · số đội"]:::trim
+  G2 -->|"Lưu"| G3["Tạo game mới<br/>(trạng thái: chờ)"]:::trim
+
+  D0 -->|"chọn game → chọn Sửa"| G4["Màn Thiết lập Game<br/>(sửa — điền sẵn dữ liệu hiện có)"]:::trim
+  G4 -->|"Lưu"| G5{"Game đang chạy?"}
+  G5 -->|"có"| G6["Chặn — không cho sửa"]:::hide
+  G5 -->|"không"| G7["Cập nhật thông tin game"]:::trim
+
+  D0 -->|"chọn game → chọn Xóa (confirm)"| G8["Xóa game<br/>(xoá luôn trạm · câu hỏi · đội)"]:::trim
+</pre></div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-cap"><span class="dot" style="background:var(--admin)"></span>2.3 — Thiết lập Trạm (CRUD)</div>
+      <div class="diagram"><pre class="mermaid">
+%%{init: {'theme':'base','themeVariables':{'primaryColor':'#ffffff','primaryBorderColor':'#c9c2b4','primaryTextColor':'#2b2724','lineColor':'#9b917f','fontSize':'17px'}}}%%
+flowchart TB
+  classDef mon fill:#e8f1ef,stroke:#0f5c52,color:#0f3a34;
+  classDef hide fill:#eef1f4,stroke:#94a3b8,color:#64748b,stroke-dasharray:5 4;
+
+  D0["Màn Dashboard"]:::mon -->|"chọn game → chọn Trạm"| S1["Màn Quản lý Trạm<br/>danh sách trạm của game"]:::mon
+  S1 -->|"+ Thêm trạm"| S2["Form: tên · mô tả · map · gợi ý<br/>thời gian · sức chứa · đơn vị · thứ tự<br/>loại trạm (công khai / riêng)"]:::mon
+  S2 --> S3{"Loại thử thách?"}
+  S3 -->|"MCQ"| S4["Chọn câu hỏi từ ngân hàng"]:::mon
+  S3 -->|"Thể lực"| S11["Nhập thử thách"]:::mon
+  S3 -->|"Không"| S5["Bỏ qua"]:::mon
+  S4 -->|"Lưu"| S7["Thêm trạm mới vào game"]:::mon
+  S11 -->|"Lưu"| S7
+  S5 -->|"Lưu"| S7
+
+  S1 -->|"Sửa"| S12{"Game đã bắt đầu?"}
+  S12 -->|"rồi"| S13["Chặn — không cho sửa"]:::hide
+  S12 -->|"chưa"| S8["Form điền sẵn dữ liệu"]:::mon --> S9["Cập nhật trạm"]:::mon
+
+  S1 -->|"Xóa (confirm)"| S14{"Game đã bắt đầu?"}
+  S14 -->|"rồi"| S15["Chặn — không cho xóa"]:::hide
+  S14 -->|"chưa"| S10["Xóa trạm"]:::mon
+</pre></div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-cap"><span class="dot" style="background:var(--score)"></span>2.4 — Ngân hàng câu hỏi (CRUD)</div>
+      <div class="diagram"><pre class="mermaid">
+%%{init: {'theme':'base','themeVariables':{'primaryColor':'#ffffff','primaryBorderColor':'#c9c2b4','primaryTextColor':'#2b2724','lineColor':'#9b917f','fontSize':'17px'}}}%%
+flowchart TB
+  classDef score fill:#efe7fb,stroke:#7c3aed,color:#4c1d95;
+
+  D0["Màn Dashboard"]:::score -->|"chọn game → chọn Câu hỏi"| Q1["Màn Ngân hàng câu hỏi<br/>danh sách câu hỏi"]:::score
+  Q1 -->|"+ Thêm câu hỏi"| Q2["Nhập nội dung + 4 đáp án<br/>chọn radio đáp án đúng"]:::score
+  Q2 -->|"Lưu"| Q3["Thêm câu hỏi vào ngân hàng"]:::score
+  Q1 -->|"Sửa"| Q4["Form điền sẵn dữ liệu"]:::score --> Q5["Cập nhật câu hỏi"]:::score
+  Q1 -->|"Xóa (confirm)"| Q6["Xóa câu hỏi"]:::score
+</pre></div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-cap"><span class="dot" style="background:var(--player)"></span>2.5 — Điều khiển Game (rút gọn)</div>
+      <div class="diagram"><pre class="mermaid">
+%%{init: {'theme':'base','themeVariables':{'primaryColor':'#ffffff','primaryBorderColor':'#c9c2b4','primaryTextColor':'#2b2724','lineColor':'#9b917f','fontSize':'17px'}}}%%
+flowchart TB
+  classDef trim fill:#fbe9de,stroke:#d95a24,color:#7a3410;
+
+  D0["Màn Dashboard"]:::trim -->|"chọn game → chọn Điều khiển"| C1["Màn Điều khiển Game"]:::trim
+  C1 --> C2{"Trạng thái game?"}
+  C2 -->|"chưa bắt đầu"| C3["▶ Bắt đầu game (bật)"]:::trim
+  C2 -->|"đang chạy"| C4["■ Kết thúc game (bật)"]:::trim
+  C3 --> C5["Chuyển game sang Đang chạy<br/>báo cho tất cả đội"]:::trim
+  C4 --> C6["Chuyển game sang Đã kết thúc<br/>đưa toàn bộ đội về trạng thái xong"]:::trim
+  C1 --> C7["↺ Reset game (confirm)"]:::trim
+  C7 --> C8["Xoá toàn bộ tiến độ chơi<br/>đưa game về trạng thái chờ"]:::trim
+  C1 --> C9["QR tham gia<br/>đội quét để vào Màn Tham gia"]:::trim
+</pre></div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-cap"><span class="dot" style="background:var(--admin)"></span>2.6 — Monitor trạm (kiêm điều phối)</div>
+      <div class="diagram"><pre class="mermaid">
+%%{init: {'theme':'base','themeVariables':{'primaryColor':'#ffffff','primaryBorderColor':'#c9c2b4','primaryTextColor':'#2b2724','lineColor':'#9b917f','fontSize':'17px'}}}%%
+flowchart TB
+  classDef mon fill:#e8f1ef,stroke:#0f5c52,color:#0f3a34;
+  classDef score fill:#efe7fb,stroke:#7c3aed,color:#4c1d95;
+  classDef hide fill:#eef1f4,stroke:#94a3b8,color:#64748b,stroke-dasharray:5 4;
+
+  D0["Màn Dashboard"]:::mon -->|"chọn game → chọn Monitor trạm"| M1["Màn Monitor Trạm<br/>đội tại mỗi trạm · trạng thái · điểm (realtime)"]:::mon
+  M1 --> M2["Đội bấm bắt đầu ở trạm<br/>(hiện ngay lên lưới)"]:::mon
+  M2 --> M3["Bắt đầu thử thách<br/>· TẠM ẨN — server tự xác nhận ·"]:::hide
+  M1 --> M4["Cho điểm đội tại trạm tùy chọn<br/>trạm riêng · override điểm công khai"]:::score
+  M4 --> M5["Ghi nhận điểm cho đội"]:::score
+</pre></div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-cap"><span class="dot" style="background:var(--admin)"></span>2.7 — Monitor đội</div>
+      <div class="diagram"><pre class="mermaid">
+%%{init: {'theme':'base','themeVariables':{'primaryColor':'#ffffff','primaryBorderColor':'#c9c2b4','primaryTextColor':'#2b2724','lineColor':'#9b917f','fontSize':'17px'}}}%%
+flowchart TB
+  classDef mon fill:#e8f1ef,stroke:#0f5c52,color:#0f3a34;
+
+  D0["Màn Dashboard"]:::mon -->|"chọn game → chọn Monitor đội"| T1["Màn Monitor Đội<br/>(tự cập nhật realtime)"]:::mon
+  T1 --> T2["Bảng xếp hạng theo tổng điểm"]:::mon
+  T1 --> T3["Lịch sử ghé từng trạm<br/>giờ bắt đầu · kết thúc · điểm"]:::mon
+</pre></div>
+    </div>
+
+    <p class="note"><b>Điều hướng:</b> topbar theo game (<code>admin-common.js</code>) — Sửa game · Trạm · Câu hỏi · Điều khiển · Monitor trạm · Monitor đội. Các thao tác điều phối trạm không còn là màn riêng mà nằm ngay trong lưới Monitor trạm.<br/><b>Tạo/sửa/xóa game, trạm, câu hỏi</b> là CRUD thuần REST, không qua Socket.io — chỉ các thao tác trong Điều khiển và Monitor trạm mới phát sự kiện realtime.</p>
+  </section>
+
+  <!-- 3. PLAYER -->
+  <section>
+    <div class="sec-head"><span class="sec-num">03</span><h2>Luồng Người chơi — từ quét QR đến kết quả</h2></div>
+    <p class="sec-sub">Đội quét QR, đặt tên &amp; nhận slot, chờ game chạy, giải câu hỏi mở màn để mở trạm đầu tiên, rồi lặp vòng chơi qua các trạm công khai cho tới khi hết.</p>
+    <div class="panel">
+      <div class="panel-cap"><span class="dot" style="background:var(--player)"></span>Player journey</div>
+      <div class="diagram"><pre class="mermaid">
+%%{init: {'theme':'base','themeVariables':{'primaryColor':'#ffffff','primaryBorderColor':'#c9c2b4','primaryTextColor':'#2b2724','lineColor':'#9b917f','fontSize':'19px'}}}%%
+flowchart TB
+  classDef p fill:#fbe9de,stroke:#d95a24,color:#7a3410;
+  classDef live fill:#e6f2ea,stroke:#15803d,color:#14532d;
+  classDef score fill:#efe7fb,stroke:#7c3aed,color:#4c1d95;
+  classDef done fill:#ecebe9,stroke:#57534e,color:#3f3c38;
+
+  P0["Quét QR / mở link join"]:::p --> P1["Màn Tham gia (Join)<br/>nhập tên đội → nhận slot trống"]:::p
+  P1 --> P2["Màn Chờ<br/>chờ game bắt đầu"]:::p
+  P2 -->|"game bắt đầu"| P3["Màn Câu hỏi mở màn<br/>(trắc nghiệm)"]:::p
+  P3 -->|"trả lời sai → đổi câu khác"| P3
+  P3 -->|"trả lời đúng"| P4["Nhận trạm đầu tiên"]:::p
+  P4 --> G1["Di chuyển tới trạm<br/>bản đồ · gợi ý"]:::p
+  G1 --> G3["Timer chạy, thực hiện thử thách"]:::live
+  G3 -->|"còn thời gian"| G6["Nộp điểm kết quả"]:::score
+  G3 -->|"hết giờ"| G8["Hết giờ<br/>BTC chấm điểm sau (Monitor trạm)"]:::score
+  G6 --> G7["Hoàn thành trạm"]:::done
+  G8 --> G7
+  G7 --> G9{"Còn trạm công khai<br/>chưa ghé?"}
+  G9 -->|"còn"| G10["Nhận trạm tiếp theo"]:::p
+  G10 --> G1
+  G9 -->|"hết"| PR["Màn Kết quả<br/>tổng điểm · chi tiết · xếp hạng"]:::done
+</pre></div>
+    </div>
+    <p class="note"><b>Định tuyến trạm:</b> mỗi lần chuyển trạm (<code>team:request_next</code>) server chọn trạm công khai ít tải nhất còn chỗ (theo <code>max_teams</code>); nếu các trạm đầy thì đội chờ, hết trạm thì kết thúc. Trạm <b>riêng (is_private)</b> ẩn khỏi đội — chỉ BTC cho điểm ở tab Monitor trạm.<br/><b>Câu hỏi mở màn:</b> trả lời sai không bị loại — hệ thống lập tức đổi sang một câu khác trong ngân hàng để đội thử lại, tới khi đúng mới nhận trạm đầu tiên.<br/><b>Nộp kết quả tại trạm:</b> luôn qua đúng 1 hành động — <code>team:submit_score</code> — bất kể loại thử thách; với MCQ, việc chọn đáp án chỉ gửi thêm <code>team:answer_question</code> để BTC tham khảo, không tự động chấm điểm hay thay cho việc nộp điểm.</p>
+  </section>
+
+  <!-- 4. STATE MACHINE -->
+  <section>
+    <div class="sec-head"><span class="sec-num">04</span><h2>Vòng đời một lượt trạm (team × station)</h2></div>
+    <p class="sec-sub">Trạng thái lưu trong <code>team_stations.status</code>. Đây là vòng lặp lõi của game — nơi thao tác "bắt đầu thử thách" và "cho điểm" của BTC tác động.</p>
+    <div class="panel">
+      <div class="panel-cap"><span class="dot" style="background:var(--live)"></span>Station status machine</div>
+      <div class="diagram"><pre class="mermaid">
+%%{init: {'theme':'base','themeVariables':{'primaryColor':'#ffffff','primaryBorderColor':'#c9c2b4','primaryTextColor':'#2b2724','lineColor':'#9b917f','fontSize':'16px'}}}%%
+stateDiagram-v2
+  [*] --> pending: request_start
+  pending --> requested: vào hàng đợi BTC
+  requested --> active: confirm_start (TẠM ẨN, server tự xác nhận)
+  requested --> pending: quá hạn 60s (TTL)
+  active --> completed: nộp điểm / trả lời đúng
+  active --> timeup: hết duration_seconds
+  timeup --> completed: BTC cho điểm (override)
+  completed --> [*]: chuyển trạm kế / kết thúc
+</pre></div>
+    </div>
+    <p class="note"><b>Ghi chú về "Bắt đầu thử thách" tạm ẩn:</b> hiện tại luồng thật cần <code>admin:confirm_start</code> để bật timer. Khi ẩn control này, phải có cơ chế thay thế để lượt chơi không bị kẹt ở <code>requested</code> — <b>giả định trong sơ đồ:</b> server tự chuyển <code>requested → active</code> ngay khi đội bấm bắt đầu. Nếu bạn muốn giữ bước duyệt thủ công (chỉ ẩn nút), cần xác nhận lại cách khởi động lượt.</p>
+  </section>
+
+  <!-- 5. REALTIME -->
+  <section>
+    <div class="sec-head"><span class="sec-num">05</span><h2>Tương tác thời gian thực</h2></div>
+    <p class="sec-sub">Chuỗi sự kiện Socket.io giữa đội, server và tab Monitor trạm của BTC trong một lượt chơi trạm.</p>
+    <div class="panel">
+      <div class="panel-cap"><span class="dot" style="background:var(--score)"></span>Socket.io sequence</div>
+      <div class="diagram"><pre class="mermaid">
+%%{init: {'theme':'base','themeVariables':{'primaryColor':'#ffffff','primaryBorderColor':'#c9c2b4','primaryTextColor':'#2b2724','lineColor':'#9b917f','fontSize':'15px','actorBkg':'#e8f1ef','actorBorder':'#0f5c52','signalColor':'#4a463f','labelBoxBkgColor':'#fbe9de','labelBoxBorderColor':'#d95a24'}}}%%
+sequenceDiagram
+  participant P as 🧭 Đội (Màn Chơi trạm)
+  participant S as ⚙️ Server (Socket.io)
+  participant M as 👤 BTC (Monitor trạm)
+  P->>S: team:request_start
+  S-->>M: admin:start_requested (hiện ở lưới)
+  Note over S,M: "Bắt đầu thử thách" TẠM ẨN<br/>→ server tự confirm
+  S-->>P: start:confirmed — timer chạy
+  P->>S: team:answer_question / team:submit_score
+  S-->>M: monitor:refresh
+  M->>S: admin:override_score (cho điểm trạm tùy chọn)
+  S-->>P: cập nhật điểm / trạng thái
+  S-->>M: monitor:refresh
+  Note over S,P: hết giờ → timer:expired (timeup)<br/>BTC chấm điểm sau
+</pre></div>
+    </div>
+    <p class="note"><b>Sự kiện game toàn cục:</b> <code>game:started</code> · <code>game:ended</code> · <code>game:reset</code> phát tới cả đội (điều hướng lại màn) và các tab monitor (làm mới lưới).</p>
+  </section>
+
+  <footer>
+    HTrace userflow · phản ánh trạng thái sau khi gộp control trạm vào Monitor trạm và rút gọn tab Điều khiển. Phần "Bắt đầu thử thách tạm ẩn" là giả định luồng — cần chốt cơ chế khởi động lượt trước khi triển khai code.
+  </footer>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<script>
+  mermaid.initialize({ startOnLoad: true, securityLevel: 'loose' });
+</script>
+</body>
+</html>

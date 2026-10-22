@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Câu hỏi mở khoá — htrace2</title>
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <div class="container">
+    <div class="text-center mt mb">
+      <h2>🔓 Câu hỏi mở khoá</h2>
+      <p class="text-muted">Trả lời đúng để nhận trạm đầu tiên</p>
+    </div>
+    <div id="feedback" class="alert hidden"></div>
+    <div class="card">
+      <h3 id="qtext" class="mb">…</h3>
+      <div id="options"></div>
+      <button id="submitBtn" class="btn btn-block mt" disabled>Xác nhận</button>
+    </div>
+  </div>
+
+  <script src="/js/player-common.js"></script>
+  <script>
+    let team, gameId, currentQ, selected = null;
+    const fb = document.getElementById('feedback');
+
+    function renderQuestion(q) {
+      currentQ = q; selected = null;
+      document.getElementById('qtext').textContent = q.question_text;
+      const box = document.getElementById('options');
+      box.innerHTML = ['a','b','c','d'].map(k =>
+        `<button class="option" data-k="${k}">${k.toUpperCase()}. ${esc(q['option_'+k])}</button>`
+      ).join('');
+      box.querySelectorAll('.option').forEach(el => el.addEventListener('click', () => {
+        selected = el.dataset.k;
+        box.querySelectorAll('.option').forEach(o => o.classList.remove('selected'));
+        el.classList.add('selected');
+        document.getElementById('submitBtn').disabled = false;
+      }));
+      document.getElementById('submitBtn').disabled = true;
+    }
+
+    document.getElementById('submitBtn').addEventListener('click', async () => {
+      if (!selected) return;
+      try {
+        const res = await papi('/api/teams/' + team.id + '/verify-answer', {
+          method: 'POST',
+          body: JSON.stringify({ question_id: currentQ.id, answer: selected }),
+        });
+        if (res.correct) {
+          fb.className = 'alert alert-success';
+          fb.textContent = '✅ Chính xác! Đang chuyển tới trạm đầu tiên…';
+          fb.classList.remove('hidden');
+          setTimeout(() => location.href = '/player/game.html', 900);
+        } else {
+          fb.className = 'alert alert-error';
+          fb.textContent = '❌ Chưa đúng. Thử câu hỏi khác nhé!';
+          fb.classList.remove('hidden');
+          if (res.next_question) renderQuestion(res.next_question);
+        }
+      } catch (e) { fb.className = 'alert alert-error'; fb.textContent = e.message; fb.classList.remove('hidden'); }
+    });
+
+    (async () => {
+      const me = await routePlayer();
+      if (!me) { location.href = '/'; return; }
+      team = me.team; gameId = me.team.game_id;
+      if (me.game_status === 'ended' || me.team.status === 'finished') { location.href = '/player/result.html'; return; }
+      if (me.team.current_station_id) { location.href = '/player/game.html'; return; }
+      if (me.game_status !== 'active') { location.href = '/player/welcome.html'; return; }
+      try {
+        const { question } = await papi('/api/games/' + gameId + '/intro-question');
+        renderQuestion(question);
+      } catch (e) { fb.className = 'alert alert-error'; fb.textContent = e.message; fb.classList.remove('hidden'); }
+    })();
+  </script>
+</body>
+</html>

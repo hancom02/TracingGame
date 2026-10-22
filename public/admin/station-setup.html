@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Trạm — htrace2</title>
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <div id="topbar"></div>
+  <div class="container container-wide">
+    <div class="row-between mb">
+      <h2>Trạm của game: <span id="gameName">…</span></h2>
+      <button class="btn" onclick="openForm()">+ Thêm trạm</button>
+    </div>
+    <div id="err" class="alert alert-error hidden"></div>
+    <div id="list" class="stack"></div>
+  </div>
+
+  <!-- Modal form -->
+  <div id="modal" class="center-screen hidden" style="position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:50;overflow:auto;padding:20px 0">
+    <div class="container">
+      <div class="card">
+        <h3 id="formTitle" class="mb">Thêm trạm</h3>
+        <form id="form">
+          <div class="field"><label>Tên trạm *</label><input id="name" required /></div>
+          <div class="field"><label>Mô tả thử thách</label><textarea id="description"></textarea></div>
+          <div class="grid grid-2">
+            <div class="field"><label>Link map</label><input id="map_link" placeholder="https://maps..." /></div>
+            <div class="field"><label>Map text (địa chỉ/mô tả)</label><input id="map_text" /></div>
+          </div>
+          <div class="field"><label>Gợi ý</label><input id="hint" /></div>
+          <div class="grid grid-2">
+            <div class="field"><label>Thời gian (giây)</label><input id="duration_seconds" type="number" min="10" value="300" /></div>
+            <div class="field"><label>Số đội tối đa cùng lúc</label><input id="max_teams" type="number" min="1" value="1" /></div>
+          </div>
+          <div class="grid grid-2">
+            <div class="field"><label>Đơn vị trò chơi</label><input id="unit" placeholder="vd: điểm, giây..." /></div>
+            <div class="field"><label>Thứ tự hiển thị</label><input id="display_order" type="number" value="0" /></div>
+          </div>
+          <div class="field"><label>Loại thử thách</label>
+            <select id="challenge_type" onchange="toggleQuestion()">
+              <option value="none">Không có</option>
+              <option value="mcq">Trắc nghiệm (MCQ)</option>
+              <option value="physical">Thể lực</option>
+            </select>
+          </div>
+          <div class="field hidden" id="questionField"><label>Chọn câu hỏi từ ngân hàng</label>
+            <select id="question_id"></select>
+          </div>
+          <div class="field checkbox-row">
+            <input id="is_private" type="checkbox" />
+            <label for="is_private" style="margin:0">Trạm private (ẩn với player, chỉ admin chấm điểm)</label>
+          </div>
+          <div class="row">
+            <button class="btn" type="submit">Lưu</button>
+            <button class="btn btn-ghost" type="button" onclick="closeForm()">Huỷ</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <script src="/js/admin-common.js"></script>
+  <script>
+    const gameId = qs('game_id');
+    document.getElementById('topbar').innerHTML = renderTopbar('Trạm', 'stations', gameId);
+    const err = document.getElementById('err');
+    const form = document.getElementById('form');
+    let editingId = null;
+    let questions = [];
+
+    function toggleQuestion() {
+      const isMcq = form.challenge_type.value === 'mcq';
+      document.getElementById('questionField').classList.toggle('hidden', !isMcq);
+    }
+
+    async function loadGame() {
+      const { game } = await api('/api/games/' + gameId);
+      document.getElementById('gameName').textContent = game.name;
+    }
+
+    async function loadQuestions() {
+      const data = await api('/api/questions?game_id=' + gameId);
+      questions = data.questions;
+      form.question_id.innerHTML = questions.length
+        ? questions.map(q => `<option value="${q.id}">${esc(q.question_text.slice(0,60))}</option>`).join('')
+        : '<option value="">(chưa có câu hỏi — tạo ở mục Câu hỏi)</option>';
+    }
+
+    function stationCard(s) {
+      const type = { mcq: 'Trắc nghiệm', physical: 'Thể lực', none: 'Không' }[s.challenge_type];
+      return `<div class="card">
+        <div class="row-between">
+          <div>
+            <h3>${esc(s.name)}
+              ${s.is_private ? '<span class="badge badge-danger">Private</span>' : '<span class="badge badge-primary">Public</span>'}
+            </h3>
+            <p class="text-sm text-muted">${s.duration_seconds}s · tối đa ${s.max_teams} đội · thử thách: ${type}</p>
+            ${s.description ? `<p class="text-sm mt">${esc(s.description)}</p>` : ''}
+          </div>
+        </div>
+        <div class="row mt">
+          <button class="btn btn-sm" onclick='openForm(${JSON.stringify(s)})'>Sửa</button>
+          <button class="btn btn-sm btn-danger" onclick="del(${s.id})">Xóa</button>
+        </div>
+      </div>`;
+    }
+
+    async function load() {
+      try {
+        const { stations } = await api('/api/stations?game_id=' + gameId);
+        document.getElementById('list').innerHTML = stations.length
+          ? stations.map(stationCard).join('')
+          : '<div class="card text-center text-muted">Chưa có trạm nào.</div>';
+      } catch (e) { err.textContent = e.message; err.classList.remove('hidden'); }
+    }
+
+    function openForm(s) {
+      editingId = s ? s.id : null;
+      document.getElementById('formTitle').textContent = s ? 'Sửa trạm' : 'Thêm trạm';
+      form.reset();
+      if (s) {
+        for (const k of ['name','description','map_link','map_text','hint','duration_seconds','max_teams','unit','display_order','challenge_type']) {
+          if (form[k]) form[k].value = s[k] ?? '';
+        }
+        form.is_private.checked = !!s.is_private;
+        if (s.question_id) form.question_id.value = s.question_id;
+      }
+      toggleQuestion();
+      document.getElementById('modal').classList.remove('hidden');
+    }
+    function closeForm() { document.getElementById('modal').classList.add('hidden'); }
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const body = {
+        game_id: gameId,
+        name: form.name.value.trim(),
+        description: form.description.value,
+        map_link: form.map_link.value,
+        map_text: form.map_text.value,
+        hint: form.hint.value,
+        duration_seconds: form.duration_seconds.value,
+        max_teams: form.max_teams.value,
+        unit: form.unit.value,
+        display_order: form.display_order.value,
+        challenge_type: form.challenge_type.value,
+        question_id: form.question_id.value,
+        is_private: form.is_private.checked,
+      };
+      try {
+        if (editingId) await api('/api/stations/' + editingId, { method: 'PUT', body: JSON.stringify(body) });
+        else await api('/api/stations', { method: 'POST', body: JSON.stringify(body) });
+        closeForm(); load();
+      } catch (e2) { alert(e2.message); }
+    });
+
+    async function del(id) {
+      if (!confirm('Xóa trạm này?')) return;
+      try { await api('/api/stations/' + id, { method: 'DELETE' }); load(); }
+      catch (e) { alert(e.message); }
+    }
+
+    (async () => {
+      if (!(await requireAdmin())) return;
+      if (!gameId) { err.textContent = 'Thiếu game_id'; err.classList.remove('hidden'); return; }
+      await loadGame(); await loadQuestions(); load();
+    })();
+  </script>
+</body>
+</html>

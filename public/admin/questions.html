@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Câu hỏi — htrace2</title>
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <div id="topbar"></div>
+  <div class="container container-wide">
+    <div class="row-between mb">
+      <h2>Ngân hàng câu hỏi: <span id="gameName">…</span></h2>
+      <button class="btn" onclick="openForm()">+ Thêm câu hỏi</button>
+    </div>
+    <div id="err" class="alert alert-error hidden"></div>
+    <div id="list" class="stack"></div>
+  </div>
+
+  <div id="modal" class="center-screen hidden" style="position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:50;overflow:auto;padding:20px 0">
+    <div class="container">
+      <div class="card">
+        <h3 id="formTitle" class="mb">Thêm câu hỏi</h3>
+        <form id="form">
+          <div class="field"><label>Nội dung câu hỏi *</label><textarea id="question_text" required></textarea></div>
+          <div class="field"><label class="checkbox-row"><input type="radio" name="correct" value="a" style="width:auto"> Đáp án A *</label>
+            <input id="option_a" required /></div>
+          <div class="field"><label class="checkbox-row"><input type="radio" name="correct" value="b" style="width:auto"> Đáp án B *</label>
+            <input id="option_b" required /></div>
+          <div class="field"><label class="checkbox-row"><input type="radio" name="correct" value="c" style="width:auto"> Đáp án C *</label>
+            <input id="option_c" required /></div>
+          <div class="field"><label class="checkbox-row"><input type="radio" name="correct" value="d" style="width:auto"> Đáp án D *</label>
+            <input id="option_d" required /></div>
+          <p class="text-sm text-muted mb">Chọn radio ở đáp án đúng.</p>
+          <div class="row">
+            <button class="btn" type="submit">Lưu</button>
+            <button class="btn btn-ghost" type="button" onclick="closeForm()">Huỷ</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <script src="/js/admin-common.js"></script>
+  <script>
+    const gameId = qs('game_id');
+    document.getElementById('topbar').innerHTML = renderTopbar('Câu hỏi', 'questions', gameId);
+    const err = document.getElementById('err');
+    const form = document.getElementById('form');
+    let editingId = null;
+
+    async function loadGame() {
+      const { game } = await api('/api/games/' + gameId);
+      document.getElementById('gameName').textContent = game.name;
+    }
+
+    function card(q) {
+      const opts = ['a','b','c','d'].map(k => {
+        const correct = q.correct_answer === k;
+        return `<li class="${correct ? 'badge-success badge' : ''}" style="list-style:none;padding:4px 8px;margin:2px 0">
+          ${k.toUpperCase()}. ${esc(q['option_'+k])} ${correct ? '✓' : ''}</li>`;
+      }).join('');
+      return `<div class="card">
+        <h3>${esc(q.question_text)}</h3>
+        <ul class="mt">${opts}</ul>
+        <div class="row mt">
+          <button class="btn btn-sm" onclick='openForm(${JSON.stringify(q)})'>Sửa</button>
+          <button class="btn btn-sm btn-danger" onclick="del(${q.id})">Xóa</button>
+        </div>
+      </div>`;
+    }
+
+    async function load() {
+      try {
+        const { questions } = await api('/api/questions?game_id=' + gameId);
+        document.getElementById('list').innerHTML = questions.length
+          ? questions.map(card).join('')
+          : '<div class="card text-center text-muted">Chưa có câu hỏi nào.</div>';
+      } catch (e) { err.textContent = e.message; err.classList.remove('hidden'); }
+    }
+
+    function openForm(q) {
+      editingId = q ? q.id : null;
+      document.getElementById('formTitle').textContent = q ? 'Sửa câu hỏi' : 'Thêm câu hỏi';
+      form.reset();
+      if (q) {
+        form.question_text.value = q.question_text;
+        for (const k of ['a','b','c','d']) form['option_'+k].value = q['option_'+k];
+        const r = form.querySelector(`input[name=correct][value=${q.correct_answer}]`);
+        if (r) r.checked = true;
+      }
+      document.getElementById('modal').classList.remove('hidden');
+    }
+    function closeForm() { document.getElementById('modal').classList.add('hidden'); }
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const correct = form.querySelector('input[name=correct]:checked');
+      if (!correct) { alert('Vui lòng chọn đáp án đúng'); return; }
+      const body = {
+        game_id: gameId,
+        question_text: form.question_text.value.trim(),
+        option_a: form.option_a.value, option_b: form.option_b.value,
+        option_c: form.option_c.value, option_d: form.option_d.value,
+        correct_answer: correct.value,
+      };
+      try {
+        if (editingId) await api('/api/questions/' + editingId, { method: 'PUT', body: JSON.stringify(body) });
+        else await api('/api/questions', { method: 'POST', body: JSON.stringify(body) });
+        closeForm(); load();
+      } catch (e2) { alert(e2.message); }
+    });
+
+    async function del(id) {
+      if (!confirm('Xóa câu hỏi này?')) return;
+      try { await api('/api/questions/' + id, { method: 'DELETE' }); load(); }
+      catch (e) { alert(e.message); }
+    }
+
+    (async () => {
+      if (!(await requireAdmin())) return;
+      if (!gameId) { err.textContent = 'Thiếu game_id'; err.classList.remove('hidden'); return; }
+      await loadGame(); load();
+    })();
+  </script>
+</body>
+</html>

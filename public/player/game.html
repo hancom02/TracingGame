@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Trạm — htrace2</title>
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <div class="container">
+    <div class="row-between mt mb">
+      <span class="badge badge-primary" id="teamBadge">…</span>
+      <span class="badge" id="progressBadge"></span>
+    </div>
+
+    <div id="alertBox" class="alert hidden"></div>
+
+    <!-- Thông tin trạm -->
+    <div class="card" id="stationCard">
+      <h2 id="stName">…</h2>
+      <p id="stDesc" class="text-muted"></p>
+      <div id="stMeta" class="stack mt"></div>
+    </div>
+
+    <!-- Trạng thái chờ / timer / thử thách -->
+    <div class="card" id="playCard">
+      <div id="waitState">
+        <button id="startBtn" class="btn btn-lg btn-block">▶ Bắt đầu tại trạm này</button>
+      </div>
+
+      <div id="pendingState" class="hidden text-center">
+        <div class="alert alert-info">⏳ Đang chờ admin xác nhận bắt đầu…</div>
+      </div>
+
+      <div id="findingNextState" class="hidden text-center">
+        <div class="alert alert-info">🔍 Đang tìm trạm tiếp theo…</div>
+      </div>
+
+      <div id="activeState" class="hidden">
+        <div class="timer mb" id="timer">--:--</div>
+
+        <!-- MCQ challenge -->
+        <div id="mcqBox" class="hidden mb">
+          <h3 id="mcqQ" class="mb"></h3>
+          <div id="mcqOptions"></div>
+        </div>
+
+        <!-- Score entry -->
+        <div id="scoreBox" class="field">
+          <label for="scoreInput">Nhập điểm của đội <span id="unitLabel" class="text-muted"></span></label>
+          <input id="scoreInput" type="number" placeholder="Điểm" />
+          <button id="scoreBtn" class="btn btn-block mt">Nộp điểm</button>
+        </div>
+      </div>
+
+      <div id="doneState" class="hidden text-center">
+        <div class="alert alert-success" id="doneMsg">Đã hoàn thành trạm này.</div>
+        <button id="nextBtn" class="btn btn-lg btn-block">Đến trạm tiếp theo →</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/js/player-common.js"></script>
+  <script>
+    let me, team, station, socket;
+    const $ = (id) => document.getElementById(id);
+    function show(id) { ['waitState','pendingState','findingNextState','activeState','doneState'].forEach(s => $(s).classList.toggle('hidden', s !== id)); }
+    function alertMsg(msg, cls='alert-info') { const b=$('alertBox'); b.className='alert '+cls; b.textContent=msg; b.classList.remove('hidden'); }
+
+    function renderStation(s) {
+      station = s;
+      $('stName').textContent = s.name;
+      $('stDesc').textContent = s.description || '';
+      const meta = [];
+      if (s.map_text) meta.push(`📍 ${esc(s.map_text)}`);
+      if (s.map_link) meta.push(`<a href="${esc(s.map_link)}" target="_blank">🗺️ Mở bản đồ</a>`);
+      if (s.hint) meta.push(`💡 ${esc(s.hint)}`);
+      meta.push(`⏱️ ${Math.floor(s.duration_seconds/60)} phút`);
+      $('stMeta').innerHTML = meta.map(m => `<div class="mono-cell">${m}</div>`).join('');
+      $('unitLabel').textContent = s.unit ? `(${s.unit})` : '';
+      // MCQ
+      if (s.challenge_type === 'mcq' && s.question) {
+        $('mcqQ').textContent = s.question.question_text;
+        $('mcqOptions').innerHTML = ['a','b','c','d'].map(k =>
+          `<button class="option" data-k="${k}">${k.toUpperCase()}. ${esc(s.question['option_'+k])}</button>`).join('');
+        $('mcqOptions').querySelectorAll('.option').forEach(el => el.addEventListener('click', () => {
+          $('mcqOptions').querySelectorAll('.option').forEach(o => o.classList.remove('selected'));
+          el.classList.add('selected');
+          socket.emit('team:answer_question', { team_id: team.id, station_id: station.id, answer: el.dataset.k });
+        }));
+      }
+      show('waitState');
+      $('scoreInput').value = '';
+      $('scoreInput').disabled = false;
+      $('scoreBtn').disabled = false;
+    }
+
+    function setupSocket() {
+      socket = io();
+      socket.on('connect', () => socket.emit('player:join', { token: getToken() }));
+
+      socket.on('start:confirmed', ({ station_id, duration }) => {
+        if (!station || station.id !== station_id) return;
+        show('activeState');
+        $('mcqBox').classList.toggle('hidden', !(station.challenge_type === 'mcq' && station.question));
+        $('timer').textContent = fmtTime(duration);
+      });
+      socket.on('timer:tick', ({ station_id, remaining }) => {
+        if (!station || station.id !== station_id) return;
+        const t = $('timer'); t.textContent = fmtTime(remaining);
+        t.classList.toggle('warning', remaining <= 60 && remaining > 20);
+        t.classList.toggle('danger', remaining <= 20);
+      });
+      socket.on('timer:expired', ({ station_id }) => {
+        if (!station || station.id !== station_id) return;
+        $('scoreInput').disabled = true; $('scoreBtn').disabled = true;
+        $('doneMsg').textContent = '⏰ Hết giờ! Điểm sẽ do admin xác nhận. Bấm để sang trạm tiếp.';
+        show('doneState');
+      });
+      socket.on('score:accepted', ({ station_id, score, by }) => {
+        if (station && station.id === station_id) {
+          alertMsg(`Đã ghi nhận điểm: ${score}${by==='admin'?' (admin)':''}`, 'alert-success');
+        }
+      });
+      socket.on('score:rejected', ({ reason }) => alertMsg(reason || 'Không thể nộp điểm', 'alert-error'));
+      socket.on('start:request_expired', ({ station_id }) => {
+        if (!station || station.id !== station_id) return;
+        alertMsg('Yêu cầu bắt đầu đã hết hạn (quá 1 phút chưa được xác nhận). Vui lòng bấm "Bắt đầu" lại.', 'alert-error');
+        show('waitState');
+      });
+      socket.on('next:station', ({ station: s }) => { $('alertBox').classList.add('hidden'); refreshProgress(); renderStation(s); });
+      socket.on('next:waiting', () => { alertMsg('Tất cả trạm còn lại đang đầy. Vui lòng chờ…', 'alert-info'); pollWaiting(); });
+      socket.on('player:finished', () => { location.href = '/player/result.html'; });
+      socket.on('game:ended', () => { location.href = '/player/result.html'; });
+      socket.on('game:reset', () => { alert('Admin đã reset game.'); location.href = '/player/welcome.html'; });
+    }
+
+    $('startBtn').addEventListener('click', () => {
+      socket.emit('team:request_start', { team_id: team.id, station_id: station.id });
+      show('pendingState');
+    });
+    $('scoreBtn').addEventListener('click', () => {
+      const v = parseInt($('scoreInput').value, 10);
+      if (isNaN(v)) { alertMsg('Nhập số điểm hợp lệ', 'alert-error'); return; }
+      socket.emit('team:submit_score', { team_id: team.id, station_id: station.id, score: v });
+      $('doneMsg').textContent = 'Đã nộp điểm. Bấm để sang trạm tiếp theo.';
+      show('doneState');
+    });
+    $('nextBtn').addEventListener('click', () => { socket.emit('team:request_next', { team_id: team.id }); show('findingNextState'); });
+
+    let waitTimer = null;
+    function pollWaiting() {
+      if (waitTimer) return;
+      waitTimer = setInterval(() => socket.emit('team:request_next', { team_id: team.id }), 30000);
+    }
+
+    async function refreshProgress() {
+      const m = await papi('/api/teams/me');
+      $('progressBadge').textContent = `Trạm ${m.completed_public}/${m.total_public}`;
+    }
+
+    (async () => {
+      me = await routePlayer();
+      if (!me) { location.href = '/'; return; }
+      team = me.team;
+      $('teamBadge').textContent = '🏃 ' + team.name;
+      if (me.game_status === 'ended' || me.team.status === 'finished') { location.href = '/player/result.html'; return; }
+      if (!me.team.current_station_id) { location.href = '/player/welcome.html'; return; }
+      setupSocket();
+      await refreshProgress();
+      const { station: s, team_station } = await papi('/api/teams/' + team.id + '/current-station');
+      if (!s) { location.href = '/player/welcome.html'; return; }
+      renderStation(s);
+      // Khôi phục trạng thái nếu đang active (reconnect)
+      if (team_station && team_station.status === 'active') { show('activeState'); $('mcqBox').classList.toggle('hidden', !(s.challenge_type==='mcq'&&s.question)); }
+      if (team_station && (team_station.status === 'timeup' || team_station.status === 'completed')) {
+        if (team_station.status === 'timeup') $('doneMsg').textContent = '⏰ Hết giờ! Bấm để sang trạm tiếp theo.';
+        show('doneState');
+      }
+      // Khôi phục trạng thái "đang chờ admin xác nhận" nếu yêu cầu còn hiệu lực (< 60s)
+      if (team_station && team_station.status === 'requested') {
+        const ageSec = (Date.now() - Date.parse(team_station.requested_at + 'Z')) / 1000;
+        if (ageSec < 60) show('pendingState');
+      }
+    })();
+  </script>
+</body>
+</html>

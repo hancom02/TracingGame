@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Kết quả — htrace2</title>
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <div class="container">
+    <div class="text-center mt mb">
+      <h1>🏆 Kết quả</h1>
+      <p class="text-muted">Đội <strong id="teamName">…</strong></p>
+    </div>
+    <div id="err" class="alert alert-error hidden"></div>
+
+    <div class="card text-center">
+      <p class="text-muted">Tổng điểm của đội</p>
+      <div class="timer" id="totalScore">0</div>
+    </div>
+
+    <div class="card">
+      <h3 class="mb">Điểm từng trạm</h3>
+      <div id="stations"></div>
+    </div>
+
+    <div class="card">
+      <h3 class="mb">Bảng xếp hạng</h3>
+      <div id="leaderboard"></div>
+    </div>
+
+    <button class="btn btn-ghost btn-block" onclick="leave()">Rời đội</button>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/js/player-common.js"></script>
+  <script>
+    const err = document.getElementById('err');
+    let team, gameId;
+    function leave() { if (confirm('Rời đội?')) { clearSession(); location.href = '/'; } }
+
+    async function load() {
+      const me = await routePlayer();
+      if (!me) { location.href = '/'; return; }
+      team = me.team; gameId = me.team.game_id;
+      document.getElementById('teamName').textContent = team.name;
+
+      const r = await papi('/api/teams/' + team.id + '/result');
+      document.getElementById('totalScore').textContent = r.total_score;
+      document.getElementById('stations').innerHTML = r.stations.length ? `
+        <table><thead><tr><th>Trạm</th><th>Trạng thái</th><th>Điểm</th></tr></thead>
+        <tbody>${r.stations.map(s => `<tr>
+          <td>${esc(s.name)}</td>
+          <td>${s.status === 'completed' ? '<span class="badge badge-success">Xong</span>' : '<span class="badge">—</span>'}</td>
+          <td><strong>${s.score ?? 0}</strong> ${s.unit ? esc(s.unit) : ''}</td>
+        </tr>`).join('')}</tbody></table>` : '<p class="text-muted text-sm">Chưa có dữ liệu.</p>';
+
+      await loadLeaderboard();
+    }
+
+    async function loadLeaderboard() {
+      const { leaderboard } = await papi('/api/games/' + gameId + '/leaderboard');
+      document.getElementById('leaderboard').innerHTML = `
+        <table><thead><tr><th>#</th><th>Đội</th><th>Điểm</th></tr></thead>
+        <tbody>${leaderboard.map(row => `<tr${row.id===team.id?' style="background:rgba(99,102,241,.12)"':''}>
+          <td class="rank rank-${row.rank}">${row.rank}</td>
+          <td>${esc(row.name)}</td>
+          <td><strong>${row.total}</strong></td>
+        </tr>`).join('')}</tbody></table>`;
+    }
+
+    (async () => {
+      try {
+        await load();
+        // cập nhật real-time nếu admin còn override điểm
+        const socket = io();
+        socket.on('connect', () => socket.emit('player:join', { token: getToken() }));
+        socket.on('score:accepted', load);
+        socket.on('monitor:refresh', loadLeaderboard);
+      } catch (e) { err.textContent = e.message; err.classList.remove('hidden'); }
+    })();
+  </script>
+</body>
+</html>

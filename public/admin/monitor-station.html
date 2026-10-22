@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Monitor theo Trạm — htrace2</title>
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <div id="topbar"></div>
+  <div class="container container-wide">
+    <div class="row-between mb">
+      <h2>Monitor theo Trạm</h2>
+      <a class="btn btn-sm btn-ghost" id="teamLink">Xem theo Đội →</a>
+    </div>
+    <div id="err" class="alert alert-error hidden"></div>
+    <div id="grid" class="monitor-grid"></div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/js/admin-common.js"></script>
+  <script>
+    const gameId = qs('game_id');
+    document.getElementById('topbar').innerHTML = renderTopbar('Monitor Trạm', 'monitor-station', gameId);
+    const err = document.getElementById('err');
+    document.getElementById('teamLink').href = '/admin/monitor-team.html?game_id=' + gameId;
+
+    function statusBadge(s) {
+      return { pending:'<span class="badge badge-warning">Chờ</span>', active:'<span class="badge badge-primary">Đang chơi</span>', timeup:'<span class="badge badge-danger">Hết giờ</span>', completed:'<span class="badge badge-success">Xong</span>' }[s] || s;
+    }
+
+    async function load() {
+      try {
+        const { stations } = await api('/api/games/' + gameId + '/monitor/stations');
+        document.getElementById('grid').innerHTML = stations.map(entry => {
+          const s = entry.station;
+          const activeCount = entry.teams.filter(t => t.status === 'active').length;
+          const teamRows = entry.teams.length ? entry.teams.map(t =>
+            `<div class="mono-cell row-between">
+              <span>${esc(t.team_name)}</span>
+              <span>${statusBadge(t.status)} <strong>${t.score ?? 0}</strong></span>
+            </div>`).join('') : '<p class="text-muted text-sm">Chưa có đội.</p>';
+          return `<div class="card">
+            <div class="row-between mb">
+              <h3>${esc(s.name)} ${s.is_private ? '🔒' : ''}</h3>
+              <span class="badge">${activeCount}/${s.max_teams} đang chơi</span>
+            </div>
+            ${teamRows}
+          </div>`;
+        }).join('') || '<div class="card text-muted">Chưa có trạm.</div>';
+      } catch (e) { err.textContent = e.message; err.classList.remove('hidden'); }
+    }
+
+    (async () => {
+      if (!(await requireAdmin())) return;
+      await load();
+      const socket = io();
+      socket.on('connect', () => socket.emit('admin:join_game', { game_id: Number(gameId) }));
+      socket.on('monitor:refresh', load);
+      socket.on('game:ended', load);
+      socket.on('game:reset', load);
+    })();
+  </script>
+</body>
+</html>

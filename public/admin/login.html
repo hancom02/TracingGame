@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Đăng nhập Admin — htrace2</title>
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <div class="center-screen">
+    <div class="container">
+      <div class="card">
+        <h1 class="text-center">🏁 htrace2</h1>
+        <p class="text-muted text-center mb">Đăng nhập quản trị</p>
+        <div id="err" class="alert alert-error hidden"></div>
+        <form id="loginForm">
+          <div class="field">
+            <label for="username">Tài khoản</label>
+            <input id="username" name="username" autocomplete="username" value="admin" required />
+          </div>
+          <div class="field">
+            <label for="password">Mật khẩu</label>
+            <input id="password" name="password" type="password" autocomplete="current-password" required />
+          </div>
+          <button class="btn btn-block btn-lg" type="submit">Đăng nhập</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const form = document.getElementById('loginForm');
+    const err = document.getElementById('err');
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      err.classList.add('hidden');
+      const body = {
+        username: form.username.value.trim(),
+        password: form.password.value,
+      };
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        location.href = '/admin/dashboard.html';
+      } else {
+        err.textContent = data.error || 'Đăng nhập thất bại';
+        err.classList.remove('hidden');
+      }
+    });
+  </script>
+</body>
+</html>
